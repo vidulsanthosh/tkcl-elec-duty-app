@@ -1,0 +1,189 @@
+import streamlit as st
+from datetime import datetime
+import json
+import os
+
+# --- Page Config ---
+st.set_page_config(page_title="TKCL Night Duty", layout="centered")
+
+# --- Logo + Title ---
+st.image("Kerala Ceramics  Logo.webp", width=120)
+st.markdown("## 🛡️ TKCL Electrician Night Duty Scheduler")
+st.caption("The Kerala Ceramics Limited, Kundara, Kollam")
+
+# --- Password Protection ---
+password = st.text_input("🔐 Enter Admin Password (Leave blank to view only)", type="password")
+admin_access = password == "1234"
+
+# --- Staff List ---
+staff = {
+    "Navin": "Assistant",
+    "Rajeesh": "Grade I",
+    "Vidul": "Grade II",
+    "Anoop": "Apprentice",
+    "Habeeb": "Apprentice"
+}
+
+# --- Data File ---
+data_file = "duty_data.json"
+if os.path.exists(data_file):
+    with open(data_file, "r") as f:
+        duty_schedule = json.load(f)
+else:
+    duty_schedule = {
+        "2025-06-21": "Habeeb",
+        "2025-06-22": "Anoop",
+        "2025-06-23": "Vidul",
+        "2025-06-24": "Habeeb",
+        "2025-06-25": "Anoop",
+        "2025-06-26": "Vidul",
+        "2025-06-27": "Anoop",
+        "2025-06-28": "Habeeb",
+        "2025-06-29": "Vidul"
+    }
+
+# --- Today's Date ---
+today = datetime.now().date()
+today_str = today.strftime("%Y-%m-%d")
+
+# --- Editable duty update (only if admin) ---
+if admin_access:
+    st.markdown("---")
+    st.markdown("### ✏️ Update Duty (Only Admin)")
+    edit_date = st.date_input("Select date to edit", today, min_value=min([datetime.strptime(d, "%Y-%m-%d").date() for d in duty_schedule]))
+    edit_str = edit_date.strftime("%Y-%m-%d")
+    if edit_str in duty_schedule:
+        new_person = st.selectbox("Assign duty to:", list(staff.keys()), index=list(staff.keys()).index(duty_schedule[edit_str]))
+        if st.button("✅ Update Duty"):
+            duty_schedule[edit_str] = new_person
+            with open(data_file, "w") as f:
+                json.dump(duty_schedule, f)
+            st.success(f"Duty updated: {edit_str} → {new_person}")
+    else:
+        st.warning("Selected date is not in schedule.")
+
+# --- Attendance tick (only if admin) ---
+st.markdown("---")
+if admin_access:
+    st.markdown("### ✅ Mark Attendance")
+    att_file = "attendance.json"
+    if os.path.exists(att_file):
+        with open(att_file, "r") as f:
+            attendance_data = json.load(f)
+    else:
+        attendance_data = {}
+
+    att_status = attendance_data.get(today_str, False)
+    att_mark = st.checkbox("I am present for today's duty", value=att_status)
+    if att_mark != att_status:
+        attendance_data[today_str] = att_mark
+        with open(att_file, "w") as f:
+            json.dump(attendance_data, f)
+        st.success("Attendance updated")
+else:
+    att_file = "attendance.json"
+    if os.path.exists(att_file):
+        with open(att_file, "r") as f:
+            attendance_data = json.load(f)
+    else:
+        attendance_data = {}
+
+# --- Comment/Note Box (only if admin) ---
+st.markdown("---")
+if admin_access:
+    st.markdown("### 💬 Comment or Note")
+    comment_file = "comments.json"
+    if os.path.exists(comment_file):
+        with open(comment_file, "r") as f:
+            comment_data = json.load(f)
+    else:
+        comment_data = {}
+
+    note_text = comment_data.get(today_str, "")
+    user_comment = st.text_area("Leave a note (Only visible to you)", value=note_text, placeholder="Eg: Reached duty on time.")
+    if user_comment != note_text:
+        comment_data[today_str] = user_comment
+        with open(comment_file, "w") as f:
+            json.dump(comment_data, f)
+        st.success("Note updated")
+else:
+    comment_file = "comments.json"
+    if os.path.exists(comment_file):
+        with open(comment_file, "r") as f:
+            comment_data = json.load(f)
+    else:
+        comment_data = {}
+
+# --- Display Sections ---
+st.subheader("📅 Duty Schedule")
+
+# Prepare lists
+completed = []
+today_block = []
+upcoming = []
+
+for date_str, name in duty_schedule.items():
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+    role = staff.get(name, '-')
+    att_icon = "✅" if attendance_data.get(date_str, False) else "❌"
+    comment = comment_data.get(date_str, '')
+    line = f"**{date_obj.strftime('%b %d (%a)')}** — {name} ({role}) {att_icon}"
+    if comment:
+        line += f"\n> 💬 {comment}"
+    if date_obj < today:
+        completed.append(line)
+    elif date_obj == today:
+        today_block.append(line)
+    else:
+        upcoming.append(line)
+
+# Show Today
+if today_block:
+    st.markdown("### 🌙 Today's Duty")
+    for line in today_block:
+        st.success(line)
+
+# Show Upcoming
+if upcoming:
+    st.markdown("### 📌 Upcoming Duties")
+    for line in upcoming:
+        st.info(line)
+
+# Show Completed
+if completed:
+    st.markdown("### ✅ Completed Duties")
+    for line in completed:
+        st.warning(line)
+
+# --- Chat Box ---
+st.markdown("---")
+st.markdown("### 💬 Chat (WhatsApp-style)")
+chat_file = "chat.json"
+if os.path.exists(chat_file):
+    with open(chat_file, "r") as f:
+        chat_data = json.load(f)
+else:
+    chat_data = []
+
+# Show messages (latest first)
+for msg in reversed(chat_data[-15:]):
+    timestamp = msg.get("time", "")
+    sender = msg.get("name", "Unknown")
+    text = msg.get("msg", "")
+    st.markdown(f"**🧑‍🔧 [{sender}] {timestamp}**\n{text}")
+
+# Send new message (admin only)
+if admin_access:
+    with st.form("chat_form"):
+        sender_name = st.selectbox("Your name", list(staff.keys()))
+        chat_msg = st.text_input("Type your message")
+        submitted = st.form_submit_button("📤 Send")
+        if submitted and chat_msg:
+            now = datetime.now().strftime("%I:%M %p")
+            chat_data.append({"name": sender_name, "msg": chat_msg, "time": now})
+            with open(chat_file, "w") as f:
+                json.dump(chat_data, f)
+            st.success("Message sent!")
+
+# --- Footer ---
+st.caption("Made with ❤️ for TKCL electricians. Only editable by admin with password. Shareable to all.")
